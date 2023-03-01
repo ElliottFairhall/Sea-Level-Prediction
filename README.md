@@ -1,6 +1,8 @@
 
 # Sea Level Prediction
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://elliottfairhall-sea-level-prediction-main-f0riix.streamlit.app/)
+
 ## Description
 
 The Sea Level Prediction project aims to predict the sea level rise for the next 50 years using various models and data sources. The project will involve analysing historical sea level data, identifying trends and patterns, and developing models to predict future sea level changes.
