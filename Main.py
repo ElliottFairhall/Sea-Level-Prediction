@@ -59,7 +59,7 @@ if upload_data:
     file_data = st.file_uploader("Upload a sea level data CSV file", type=["csv"])
 
 # read_csv or read information provided via upload
-@st.cache
+@st.cache_data
 def get_data():
     # Check if the user uploaded a file
     if file_data is not None:
