@@ -10,7 +10,7 @@ PAGE_ICON = ":chart_with_upwards_trend:"
 PAGE_TITLE = "Data Engineer, Educator Analyst and Technology Enthusiast"
 
 # Set the title and icon of the application
-st.set_page_config(page_title = PAGE_TITLE, page_icon = PAGE_ICON, layout="wide")
+st.set_page_config(page_title = PAGE_TITLE, page_icon = PAGE_ICON, layout="centered")
 
 # Get the current directory and open the css file
 current_dir = Path(__file__).parent if "_file_" in locals() else Path.cwd()
