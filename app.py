@@ -1,174 +1,170 @@
-from pathlib import Path
+"""Sea level, from 1880 to now: entry point."""
+
+from datetime import datetime
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
-from PIL import Image
-from scipy.stats import linregress
 
-# Configuration
-PAGE_TITLE = "Sea Level Prediction"
-PAGE_ICON = ":chart_with_upwards_trend:"
-
-st.set_page_config(
-    page_title=PAGE_TITLE,
-    page_icon=PAGE_ICON,
-    layout="wide",
+from src import analysis, data, sources
+from src.ui import (
+    DEFAULT_MODERN_START,
+    age_text,
+    render_config,
+    render_credits,
+    render_extremes,
+    render_footer,
+    render_freshness,
+    render_intro,
+    render_limits,
+    render_live,
+    render_scenarios,
+    render_sidebar,
+    render_station,
+    render_stitch,
+    render_topbar,
+    render_trend_section,
 )
 
-# Project paths
-CURRENT_DIR = Path(__file__).parent
-CSV_FILE = CURRENT_DIR / "assets" / "data" / "epa-sea-level.csv"
-CSS_FILE = CURRENT_DIR / "styles" / "main.css"
-IMAGE_FILE = CURRENT_DIR / "assets" / "images" / "Sea Level.jpg"
+
+def _row(source: str, latest: pd.Timestamp | None, note: str = "") -> dict[str, str]:
+    """One line of the freshness table."""
+    if latest is None:
+        return {
+            "Source": source,
+            "Latest data": "unavailable",
+            "Behind today": note or "-",
+        }
+    return {
+        "Source": source,
+        "Latest data": f"{latest:%d %b %Y}",
+        "Behind today": note or age_text(latest),
+    }
 
 
-def load_css(file_path: Path) -> None:
-    if file_path.exists():
-        with open(file_path) as f:
-            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-
-
-def render_header() -> None:
-    st.markdown(
-        """
-        <div class='header-container'>
-            <h1 class='main-title'>Sea Level Prediction</h1>
-            <p class='sub-title'>ANALYZING GLOBAL OCEAN TRENDS</p>
-        </div>
-    """,
-        unsafe_allow_html=True,
+def _live_row() -> dict[str, str]:
+    """The freshness line for the Environment Agency feed."""
+    label = "Live tide gauges (Environment Agency)"
+    stations, _ = data.load_ea_stations()
+    if not stations:
+        return _row(label, None)
+    measure = next(
+        (s["measure"] for s in stations if s["label"] == "Newlyn"),
+        stations[0]["measure"],
     )
+    readings, _ = data.load_ea_readings(measure)
+    if readings is None or readings.empty:
+        return _row(label, None)
+    latest = readings["time"].max()
+    minutes = int(
+        (datetime.now(sources.UTC) - latest.to_pydatetime()).total_seconds() // 60
+    )
+    return {
+        "Source": label,
+        "Latest data": f"{latest:%d %b %Y %H:%M} UTC",
+        "Behind today": f"{minutes} minutes",
+    }
 
 
-@st.cache_data
-def load_data(file_path: Path):
-    return pd.read_csv(file_path)
+def freshness_rows(
+    epa: pd.DataFrame, satellite: pd.DataFrame | None
+) -> list[dict[str, str]]:
+    """Describe how current each data source is, from what it actually returned.
 
+    Args:
+        epa: The bundled long record.
+        satellite: The satellite series, or None if it failed to load.
 
-def render_sidebar(df: pd.DataFrame):
-    with st.sidebar:
-        st.markdown(
-            "<h2 style='font-family:Outfit; margin-bottom:0;'>Data Engine</h2>",
-            unsafe_allow_html=True,
+    Returns:
+        Rows for the freshness table.
+    """
+    rows = [
+        _row(
+            "Global satellite record (University of Colorado)",
+            None if satellite is None else satellite["date"].max(),
         )
-        st.caption("Configuring high-fidelity signals.")
-        st.markdown("---")
-
-        years = sorted(df["Year"].unique())
-        start_year = st.slider("Start Year", int(min(years)), 2020, 1880)
-        end_year = st.slider("Forecast Year", 2020, 2050, 2050)
-
-        st.markdown("---")
-        st.caption("Environment: Sea Level Forecast V1.0")
-        st.caption("Aesthetic: Soft Rose / Sky")
-    return start_year, end_year
-
-
-def render_metrics(df: pd.DataFrame):
-    total_records = len(df)
-    latest_level = df["CSIRO Adjusted Sea Level"].iloc[-1]
-    avg_rise = (
-        df["CSIRO Adjusted Sea Level"].iloc[-1] - df["CSIRO Adjusted Sea Level"].iloc[0]
-    ) / (df["Year"].iloc[-1] - df["Year"].iloc[0])
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Records", f"{total_records}")
-    col2.metric("Latest Sea Level", f"{latest_level:.2f} in")
-    col3.metric("Avg. Annual Rise", f"{avg_rise:.3f} in/yr")
-
-
-def render_visualizations(df: pd.DataFrame, start_year: int, end_year: int):
-    # Filter data for scatter
-    mask = (df["Year"] >= start_year) & (df["Year"] <= 2020)
-    filtered_df = df[mask]
-
-    # Regression
-    res = linregress(df["Year"], df["CSIRO Adjusted Sea Level"])
-    x_pred = pd.Series([float(i) for i in range(start_year, end_year + 1)])
-    y_pred = res.slope * x_pred + res.intercept
-
-    # Create Plotly figure
-    fig = go.Figure()
-
-    # Scatter plot of raw data
-    fig.add_trace(
-        go.Scatter(
-            x=filtered_df["Year"],
-            y=filtered_df["CSIRO Adjusted Sea Level"],
-            mode="markers",
-            name="Historical Data",
-            marker=dict(color="#fda4af", size=8, opacity=0.6),
+    ]
+    for label, key in (
+        ("UK tide gauges (PSMSL), shown for Newlyn", "psmsl-202"),
+        ("US tide gauges (NOAA), shown for The Battery", "noaa-8518750"),
+    ):
+        monthly, _ = data.load_station(key)
+        rows.append(_row(label, None if monthly is None else monthly["date"].max()))
+    daily, _ = data.load_newlyn_daily()
+    rows.append(
+        _row(
+            "Newlyn daily readings (UHSLC)",
+            None if daily is None else daily["date"].max(),
+            note="series ends here",
         )
     )
-
-    # Prediction line
-    fig.add_trace(
-        go.Scatter(
-            x=x_pred,
-            y=y_pred,
-            mode="lines",
-            name="Linear Trend",
-            line=dict(color="#7dd3fc", width=3),
+    rows.append(_live_row())
+    rows.append(
+        _row(
+            "Original reconstruction (EPA / CSIRO)",
+            pd.Timestamp(int(epa["year"].max()), 12, 31),
+            note="fixed file, no longer updated",
         )
     )
+    return rows
 
-    fig.update_layout(
-        title="Historical & Predicted Sea Level Rise",
-        xaxis_title="Year",
-        yaxis_title="Sea Level (inches)",
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, sans-serif", size=14, color="#f8fafc"),
-        hovermode="x unified",
-        margin=dict(l=20, r=20, t=60, b=20),
+
+def _modern_rate(sat_annual: pd.DataFrame | None) -> float | None:
+    """Recent global rate of rise (mm a year) from the satellite years, if loaded."""
+    if sat_annual is None or len(sat_annual) < 4:
+        return None
+    return analysis.trend(sat_annual["year"], sat_annual["level_mm"]).slope
+
+
+def _uk_lag() -> str:
+    """How far behind the UK gauge records are, from what Newlyn returned."""
+    monthly, _ = data.load_station("psmsl-202")
+    if monthly is None:
+        return "typically about a year"
+    return age_text(monthly["date"].max()).replace(" ago", "")
+
+
+def main() -> None:
+    """Render the page. Each section copes with a missing source on its own."""
+    render_config()
+    render_topbar()
+    units = render_sidebar()
+
+    epa = data.load_epa()
+    raw, satellite_error = data.load_satellite()
+    stitched = sat_annual = None
+    modern_start = DEFAULT_MODERN_START
+    if raw is not None:
+        sat_annual = analysis.annual_means(raw, analysis.MIN_SATELLITE_CYCLES)
+        stitched = analysis.stitch(epa[["year", "level_mm"]], sat_annual)
+        modern_start = int(sat_annual["year"].min())
+
+    render_intro(stitched, epa)
+    render_freshness(freshness_rows(epa, raw))
+
+    if stitched is not None and raw is not None:
+        render_stitch(epa, raw, stitched, units)
+        render_trend_section(stitched.series, units, modern_start)
+    else:
+        st.warning(satellite_error)
+
+    render_station(sat_annual, units)
+
+    daily, daily_error = data.load_newlyn_daily()
+    if daily is not None:
+        render_extremes(daily, units)
+    else:
+        st.warning(daily_error)
+
+    if stitched is not None:
+        render_scenarios(stitched.series, units, modern_start)
+
+    render_live(units, _modern_rate(sat_annual))
+    render_limits(_uk_lag())
+    release = (
+        sources.release_name(raw.attrs.get("source_url")) if raw is not None else None
     )
-
-    st.plotly_chart(fig, width="stretch")
-
-
-def main():
-    load_css(CSS_FILE)
-    render_header()
-
-    df = load_data(CSV_FILE)
-    start_year, end_year = render_sidebar(df)
-
-    tab1, tab2 = st.tabs(["Project Overview", "Analysis"])
-
-    with tab2:
-        render_metrics(df)
-        st.markdown("<br>", unsafe_allow_html=True)
-        render_visualizations(df, start_year, end_year)
-
-        st.markdown(
-            """
-        ### Impact Summary
-        Over the past century, global sea levels have risen significantly. The current trend suggests a continuous increase,
-        impacting coastal infrastructure and ecosystems worldwide. Linear regression highlights the persistent upward trajectory
-        if current conditions continue.
-        """
-        )
-
-    with tab1:
-        if IMAGE_FILE.exists():
-            image = Image.open(IMAGE_FILE)
-            st.image(image, width="stretch")
-
-        st.markdown(
-            """
-        ### Project Outline
-        In this project, we provide an analysis of sea level changes looking at data since 1880.
-        Rising sea levels have become a well-documented topic, with significant impacts on coastal communities,
-        ecosystems, and infrastructure.
-
-        ### Methodology
-        - **Data Source:** EPA Global Average Absolute Sea Level Change.
-        - **Visualizations:** High-fidelity interactive charts using Plotly.
-        - **Analysis:** Linear regression using Scipy for forecasting future trends.
-        """
-        )
+    render_credits(release)
+    render_footer()
 
 
 if __name__ == "__main__":

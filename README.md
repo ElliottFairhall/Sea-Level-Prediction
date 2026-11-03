@@ -1,122 +1,81 @@
-# Sea Level Intelligence
+# Sea level, from 1880 to now
 
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://elliottfairhall-sea-level-prediction-main-f0riix.streamlit.app/)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
-A climate data analytics dashboard that visualizes historical ocean trends and projects future sea level rise using
-statistical regression models. This tool transforms raw environmental data into actionable climate intelligence.
+This project started as a fixed dataset that stopped in 2013. It now joins that long record to live and regularly
+updated sources, and uses them to teach how sea level data is handled: how fast the sea is rising, how sure we can be,
+and what it means on a particular coast. Built with Streamlit, pandas, SciPy and Plotly.
 
-![Ocean Trend](https://images.unsplash.com/photo-1468581264429-2548ef9eb732?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D)
+## What it does
 
-## Features
+- Shows how current every source is, using what each one returned when the page loaded
+- Joins a tide gauge reconstruction (1880 to 2013) to satellite altimetry (1993 to within months of today) and checks
+  how well they agree
+- Asks whether the rate is changing: rolling rates over a window you choose, rates by era, and a straight line compared
+  with a curve, all with honest uncertainty
+- Compares fourteen tide gauges (eight UK, six US) with the global ocean and estimates land movement
+- Counts how often a fixed high level was reached at Newlyn over a century
+- Extends two simple models forward, clearly labelled as extrapolations and not forecasts
+- Shows the last two days of a live Environment Agency tide gauge, to put the tide in context
+- Says plainly what it can and cannot tell you, and credits every source
 
-- **Longitudinal Analysis**: Visualization of Global Average Absolute Sea Level Change from 1880 to present
-- **Predictive Modeling**: Linear regression forecasting extending to 2050 and beyond
-- **Dynamic Filtering**: Interactive time-series controls to isolate specific historical periods
-- **Key Metrics Dashboard**: Real-time calculation of average annual rise and latest recorded levels
+## Data
 
-## Architecture
+| Source                                       | Used for                | Freshness                 |
+| -------------------------------------------- | ----------------------- | ------------------------- |
+| EPA / CSIRO (bundled file)                   | Long global record      | Ends 2013, fixed          |
+| University of Colorado global mean sea level | Satellite global series | About two months behind   |
+| PSMSL monthly means                          | UK tide gauges          | Up to about a year behind |
+| NOAA CO-OPS monthly means                    | US tide gauges          | About one month behind    |
+| UHSLC research-quality daily data            | Newlyn extremes         | Ends 2016                 |
+| Environment Agency tide gauge API            | Live tide panel         | Minutes                   |
 
-```mermaid
-graph TD
-    subgraph Data Source
-        CSV[EPA Sea Level Data]
-    end
+Third-party data is fetched when the page runs and is **not** copied into this repository. Each source's credit and
+terms are shown on the page and defined in `src/sources.py`. If one source is unavailable the section that needs it says
+so and the rest of the page keeps working. Dates, years and citations are computed from the data and the clock, never
+typed in; a test fails if a current year is hard-coded.
 
-    subgraph Processing
-        P[Pandas Dataframe]
-        S[SciPy Linear Regression]
-    end
+## Techniques
 
-    subgraph Visualization
-        M[Metrics Engine]
-        C[Plotly Charts]
-    end
+Each is explained on the page where it is used and implemented in `src/analysis.py`.
 
-    CSV --> P
-    P --> S
-    P --> M
-    P --> C
-    S --> C
+- Joining two records with different baselines using their overlap, then checking the join
+- Trends with a moving-block bootstrap, because neighbouring years are not independent
+- Rolling-window trends and a quadratic fit for acceleration
+- Removing the seasonal cycle from monthly data and expressing gauges against a common baseline
+- Estimating vertical land movement from the gap between a gauge and the global ocean
+- Counting extremes against a fixed early threshold
+- Statistical bands around simple projections
+
+## Run it
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
 ```
 
-## Project Structure
+Needs Python 3.11 or newer and an internet connection. The theme follows your system's light or dark setting and is
+defined in `.streamlit/config.toml`.
 
-```
-Sea-Level-Prediction/
-├── app.py                  # Main dashboard application
-├── assets/
-│   ├── data/               # Historical datasets
-│   └── images/             # Static assets
-├── styles/                 # Custom CSS styling
-├── pyproject.toml          # Project configuration
-├── requirements.txt        # Dependencies
-└── README.md
+## Test it
+
+```bash
+pip install -e ".[dev]"
+pytest
 ```
 
-## Requirements
+The tests never touch the network. They serve offline copies of every source in the real formats and cover the parsers,
+each technique (against data with known answers), the whole page, outages of each source, and newer data arriving.
+`tests/test_pillow_security_*.py` fails if Pillow is capped below 13 or Python 3.10 is allowed, because older Pillow
+releases carry known security advisories.
 
-- Python 3.10 or higher
-- Streamlit >= 1.32.0
-- Pandas >= 2.0.0
-- Plotly >= 5.18.0
-- SciPy >= 1.11.0
+## Limits
 
-## Installation
+This is a teaching and exploration tool, not a forecast or a flood-risk service. The scenarios extend past trends and
+know nothing about ice sheets or emissions; for physically based projections see the
+[IPCC Sixth Assessment Report](https://www.ipcc.ch/report/ar6/wg1/chapter/chapter-9/). Monthly and daily averages hide
+tides and storm surges. UK gauge records lag by about a year.
 
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/elliottfairhall/Sea-Level-Prediction.git
-   cd Sea-Level-Prediction
-   ```
-
-2. Create a virtual environment:
-
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. Install dependencies:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## Usage
-
-1. Start the dashboard:
-
-   ```bash
-   streamlit run app.py
-   ```
-
-2. Open your browser at `http://localhost:8501`. The application launches on the **Project Overview** tab.
-
-3. Use the **Data Engine** sidebar to adjust:
-
-   - **Start Year**: Filter historical data range
-   - **Forecast Year**: Extend the prediction horizon
-
-## Business Use Case
-
-This project demonstrates capabilities essential for environmental and risk analytics:
-
-- **Trend Forecasting**: Applying statistical models to time-series data to predict future states.
-- **Risk Assessment**: Visualizing critical environmental thresholds for infrastructure planning.
-- **Data Storytelling**: Communicating complex scientific data through intuitive, interactive dashboards.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Author
-
-**Elliott Fairhall**
-
-- Website: [data-flakes.dev](https://data-flakes.dev)
-- GitHub: [@elliottfairhall](https://github.com/elliottfairhall)
-- LinkedIn: [Elliott Fairhall](https://uk.linkedin.com/in/elliott-fairhall-666945105)
+Part of [Data Flakes](https://www.data-flakes.dev/).
